@@ -31,6 +31,7 @@
 #include "vnodeUtil.h"
 
 #pragma GCC diagnostic ignored "-Wint-conversion"
+extern int tsMaxQueues;
 
 void *      pShellServer = NULL;
 SShellObj **shellList = NULL;
@@ -127,8 +128,8 @@ int vnodeInitShell() {
   rpcInit.sessionsPerChann = 16;
   rpcInit.idMgmt = TAOS_ID_FREE;
   rpcInit.connType = TAOS_CONN_UDPS;
-  rpcInit.idleTime = tsShellActivityTimer * 1200;
-  rpcInit.qhandle = rpcQhandle;
+  rpcInit.idleTime = tsShellActivityTimer * 2000;
+  rpcInit.qhandle = rpcQhandle[0];
   rpcInit.efp = vnodeSendVpeerCfgMsg;
 
   pShellServer = taosOpenRpc(&rpcInit);
@@ -155,7 +156,7 @@ int vnodeOpenShellVnode(int vnode) {
 
   memset(shellList[vnode], 0, size);
 
-  taosOpenRpcChann(pShellServer, vnode, sessions);
+  taosOpenRpcChannWithQ(pShellServer, vnode, sessions, rpcQhandle[(vnode+1)%tsMaxQueues]);
 
   return 0;
 }
@@ -471,6 +472,12 @@ int vnodeProcessShellSubmitRequest(char *pMsg, int msgLen, SShellObj *pObj) {
     goto _submit_over;
   }
 
+  if (tsAvailDataDirGB < tsMinimalDataDirGB) {
+    dError("server disk space remain %.3f GB, need at least %.3f GB, stop writing", tsAvailDataDirGB, tsMinimalDataDirGB);
+    code = TSDB_CODE_SERVER_NO_SPACE;
+    goto _submit_over;
+  }
+
   pObj->count = pSubmit->numOfSid;  // for import
   pObj->code = 0;                   // for import
   pObj->numOfTotalPoints = 0;       // for import
@@ -478,6 +485,7 @@ int vnodeProcessShellSubmitRequest(char *pMsg, int msgLen, SShellObj *pObj) {
 
   int32_t numOfPoints = 0;
   int32_t numOfTotalPoints = 0;
+  TSKEY   now = taosGetTimestamp(pVnode->cfg.precision);
 
   for (int32_t i = 0; i < pSubmit->numOfSid; ++i) {
     numOfPoints = 0;
@@ -502,6 +510,13 @@ int vnodeProcessShellSubmitRequest(char *pMsg, int msgLen, SShellObj *pObj) {
       goto _submit_over;
     }
 
+    if (pMeterObj->uid != pBlocks->uid) {
+      dError("vid:%d sid:%d, meterId:%s, uid:%lld, uid in msg:%lld, uid mismatch", vnode, sid, pMeterObj->meterId,
+             pMeterObj->uid, pBlocks->uid);
+      code = TSDB_CODE_INVALID_SUBMIT_MSG;
+      goto _submit_over;
+    }
+
     // dont include sid, vid
     int subMsgLen = sizeof(pBlocks->numOfRows) + htons(pBlocks->numOfRows) * pMeterObj->bytesPerPoint;
     int sversion = htonl(pBlocks->sversion);
@@ -517,11 +532,11 @@ int vnodeProcessShellSubmitRequest(char *pMsg, int msgLen, SShellObj *pObj) {
       // meter status is ready for insert/import
       if (pSubmit->import) {
         code = vnodeImportPoints(pMeterObj, (char *) &(pBlocks->numOfRows), subMsgLen, TSDB_DATA_SOURCE_SHELL, pObj,
-                                 sversion, &numOfPoints);
+                                 sversion, &numOfPoints, now);
         vnodeClearMeterState(pMeterObj, TSDB_METER_STATE_IMPORTING);
       } else {
         code = vnodeInsertPoints(pMeterObj, (char *) &(pBlocks->numOfRows), subMsgLen, TSDB_DATA_SOURCE_SHELL, NULL,
-                                 sversion, &numOfPoints);
+                                 sversion, &numOfPoints, now);
         vnodeClearMeterState(pMeterObj, TSDB_METER_STATE_INSERT);
       }
 

@@ -238,10 +238,15 @@ void httpProcessSingleSqlCallBack(void *param, TAOS_RES *result, int code) {
 
   if (code < 0) {
     SSqlObj *pObj = (SSqlObj *)result;
-    httpError("context:%p, fd:%d, ip:%s, user:%s, query error, taos:%p, code:%d, sqlObj:%p",
-              pContext, pContext->fd, pContext->ipstr, pContext->user, pContext->session->taos, -code, pObj);
-
-    httpSendTaosdErrorResp(pContext, -code);
+    if (-code == TSDB_CODE_INVALID_SQL) {
+      httpError("context:%p, fd:%d, ip:%s, user:%s, query error, taos:%p, code:%d:invalidsql, sqlObj:%p, error:%s",
+                pContext, pContext->fd, pContext->ipstr, pContext->user, pContext->session->taos, -code, pObj, pObj->cmd.payload);
+      httpSendTaosdInvalidSqlErrorResp(pContext, pObj->cmd.payload);
+    } else {
+      httpError("context:%p, fd:%d, ip:%s, user:%s, query error, taos:%p, code:%d, sqlObj:%p",
+                pContext, pContext->fd, pContext->ipstr, pContext->user, pContext->session->taos, -code, pObj);
+      httpSendTaosdErrorResp(pContext, -code);
+    }
     return;
   }
 
@@ -289,16 +294,20 @@ void httpProcessSingleSqlCmd(HttpContext *pContext) {
     return;
   }
 
-  httpDump("context:%p, fd:%d, ip:%s, user:%s, sql:%s, start query", pContext, pContext->fd, pContext->ipstr,
+  httpDump("context:%p, fd:%d, ip:%s, user:%s, start query, sql:%s", pContext, pContext->fd, pContext->ipstr,
            pContext->user, sql);
   taos_query_a(pSession->taos, sql, httpProcessSingleSqlCallBack, (void *)pContext);
 }
 
 void httpProcessLoginCmd(HttpContext *pContext) {
-  char token[128] = "current version only supports basic authorization, no token returned";
-  httpTrace("context:%p, fd:%d, ip:%s, user:%s, login via http, return token:%s",
+  char token[128] = {0};
+  if (!httpGenTaosdAuthToken(pContext, token, 128)) {
+    httpSendErrorResp(pContext, HTTP_GEN_TAOSD_TOKEN_ERR);
+  } else {
+    httpTrace("context:%p, fd:%d, ip:%s, user:%s, login via http, return token:%s",
               pContext, pContext->fd, pContext->ipstr, pContext->user, token);
-  httpSendSuccResp(pContext, token);
+    httpSendSuccResp(pContext, token);
+  }
 }
 
 void httpProcessHeartBeatCmd(HttpContext *pContext) {

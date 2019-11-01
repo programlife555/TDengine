@@ -35,7 +35,7 @@ int  tsMeterSizeOnFile;
 void vnodeUpdateMeter(void *param, void *tmdId);
 void vnodeRecoverMeterObjectFile(int vnode);
 
-int (*vnodeProcessAction[])(SMeterObj *, char *, int, char, void *, int, int *) = {vnodeInsertPoints,
+int (*vnodeProcessAction[])(SMeterObj *, char *, int, char, void *, int, int *, TSKEY) = {vnodeInsertPoints,
                                                                                    vnodeImportPoints};
 
 void vnodeFreeMeterObj(SMeterObj *pObj) {
@@ -506,7 +506,7 @@ int vnodeRemoveMeterObj(int vnode, int sid) {
 }
 
 int vnodeInsertPoints(SMeterObj *pObj, char *cont, int contLen, char source, void *param, int sversion,
-                      int *numOfInsertPoints) {
+                      int *numOfInsertPoints, TSKEY now) {
   int         expectedLen, i;
   short       numOfPoints;
   SSubmitMsg *pSubmit = (SSubmitMsg *)cont;
@@ -528,7 +528,7 @@ int vnodeInsertPoints(SMeterObj *pObj, char *cont, int contLen, char source, voi
 
   // to guarantee time stamp is the same for all vnodes
   pData = pSubmit->payLoad;
-  tsKey = taosGetTimestamp(pVnode->cfg.precision);
+  tsKey = now;
   cfile = tsKey/pVnode->cfg.daysPerFile/tsMsPerDay[pVnode->cfg.precision];
   if (*((TSKEY *)pData) == 0) {
     for (i = 0; i < numOfPoints; ++i) {
@@ -556,6 +556,7 @@ int vnodeInsertPoints(SMeterObj *pObj, char *cont, int contLen, char source, voi
 
   // FIXME: Here should be after the comparison of sversions.
   if (pVnode->cfg.commitLog && source != TSDB_DATA_SOURCE_LOG) {
+    if (pVnode->logFd < 0) return TSDB_CODE_INVALID_COMMIT_LOG;
     code = vnodeWriteToCommitLog(pObj, TSDB_ACTION_INSERT, cont, contLen, sversion);
     if (code != 0) return code;
   }
@@ -575,8 +576,8 @@ int vnodeInsertPoints(SMeterObj *pObj, char *cont, int contLen, char source, voi
   int firstId = firstKey/pVnode->cfg.daysPerFile/tsMsPerDay[pVnode->cfg.precision];
   int lastId  = (*(TSKEY *)(pData + pObj->bytesPerPoint * (numOfPoints - 1)))/pVnode->cfg.daysPerFile/tsMsPerDay[pVnode->cfg.precision];
   if ((firstId <= cfile - pVnode->maxFiles) || (firstId > cfile + 1) || (lastId <= cfile - pVnode->maxFiles) || (lastId > cfile + 1)) {
-    dError("vid:%d sid:%d id:%s, invalid timestamp to insert, firstKey: %ld lastKey: %ld ", pObj->vnode, pObj->sid,
-           pObj->meterId, firstKey, (*(TSKEY *)(pData + pObj->bytesPerPoint * (numOfPoints - 1))));
+    dError("vid:%d sid:%d id:%s, invalid timestamp to insert, numOfPoints:%d firstKey: %ld lastKey: %ld ", pObj->vnode, pObj->sid,
+           pObj->meterId, numOfPoints, firstKey, (*(TSKEY *)(pData + pObj->bytesPerPoint * (numOfPoints - 1))));
     return TSDB_CODE_TIMESTAMP_OUT_OF_RANGE;
   }
 
@@ -635,7 +636,13 @@ _over:
 
 void vnodeProcessUpdateSchemaTimer(void *param, void *tmrId) {
   SMeterObj * pObj = (SMeterObj *)param;
+  if (pObj->vnode >= TSDB_MAX_VNODES) return;
   SVnodeObj * pVnode = vnodeList + pObj->vnode;
+  if (pVnode == NULL) return;
+  if (pVnode->meterList == NULL) {
+    dTrace("vnode is deleted, abort update schema");
+    return;
+  }
   SCachePool *pPool = (SCachePool *)pVnode->pCachePool;
 
   pthread_mutex_lock(&pPool->vmutex);

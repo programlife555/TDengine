@@ -16,6 +16,7 @@
 #include <assert.h>
 #include <stdint.h>
 
+#include "os.h"
 #include "taosmsg.h"
 #include "textbuffer.h"
 #include "tinterpolation.h"
@@ -24,7 +25,7 @@
 
 #define INTERPOL_IS_ASC_INTERPOL(interp) ((interp)->order == TSQL_SO_ASC)
 
-int64_t taosGetIntervalStartTimestamp(int64_t startTime, int64_t timeRange, char intervalTimeUnit) {
+int64_t taosGetIntervalStartTimestamp(int64_t startTime, int64_t timeRange, char intervalTimeUnit, int16_t precision) {
   if (timeRange == 0) {
     return startTime;
   }
@@ -38,7 +39,17 @@ int64_t taosGetIntervalStartTimestamp(int64_t startTime, int64_t timeRange, char
      *
      * TODO dynmaically decide the start time of a day
      */
-    int64_t revStartime = (startTime / timeRange) * timeRange + timezone * MILLISECOND_PER_SECOND;
+
+#if defined(WINDOWS) && _MSC_VER >= 1900
+    // see https://docs.microsoft.com/en-us/cpp/c-runtime-library/daylight-dstbias-timezone-and-tzname?view=vs-2019
+    int64_t timezone = _timezone;
+    int32_t daylight = _daylight;
+    char**  tzname = _tzname;
+#endif
+
+    int64_t t = (precision == TSDB_TIME_PRECISION_MILLI)?MILLISECOND_PER_SECOND:MILLISECOND_PER_SECOND*1000L;
+
+    int64_t revStartime = (startTime / timeRange) * timeRange + timezone * t;
     int64_t revEndtime = revStartime + timeRange - 1;
     if (revEndtime < startTime) {
       revStartime += timeRange;
@@ -75,11 +86,11 @@ void taosInterpoSetStartInfo(SInterpolationInfo* pInterpoInfo, int32_t numOfRawD
   pInterpoInfo->numOfRawDataInRows = numOfRawDataInRows;
 }
 
-TSKEY taosGetRevisedEndKey(TSKEY ekey, int32_t order, int32_t timeInterval, int8_t intervalTimeUnit) {
+TSKEY taosGetRevisedEndKey(TSKEY ekey, int32_t order, int32_t timeInterval, int8_t intervalTimeUnit, int8_t precision) {
   if (order == TSQL_SO_ASC) {
     return ekey;
   } else {
-    return taosGetIntervalStartTimestamp(ekey, timeInterval, intervalTimeUnit);
+    return taosGetIntervalStartTimestamp(ekey, timeInterval, intervalTimeUnit, precision);
   }
 }
 

@@ -34,7 +34,7 @@ extern int64_t sdbVersion;
 #define mgmtDestroyMeter(pMeter) \
   do {                           \
     tfree(pMeter->schema);       \
-    tSkipListDestroy(&(pMeter->pSkipList));\
+    pMeter->pSkipList = tSkipListDestroy((pMeter)->pSkipList);\
     tfree(pMeter);               \
   } while (0)
 
@@ -655,6 +655,9 @@ int mgmtCreateMeter(SDbObj *pDb, SCreateTableMsg *pCreate) {
     pMeter->gid.vgId = pVgroup->vgId;
     pMeter->uid = (((uint64_t)pMeter->gid.vgId) << 40) + ((((uint64_t)pMeter->gid.sid) & ((1ul << 24) - 1ul)) << 16) +
                   ((uint64_t)sdbVersion & ((1ul << 16) - 1ul));
+
+    mTrace("meter:%s, create meter in vgroup, vgId:%d, sid:%d, vnode:%d, uid:%d",
+           pMeter->meterId, pVgroup->vgId, sid, pVgroup->vnodeGid[0].vnode, pMeter->uid);
   } else {
     pMeter->uid = (((uint64_t)pMeter->createdTime) << 16) + ((uint64_t)sdbVersion & ((1ul << 16) - 1ul));
   }
@@ -665,6 +668,8 @@ int mgmtCreateMeter(SDbObj *pDb, SCreateTableMsg *pCreate) {
 
   // send create message to the selected vnode servers
   if (pCreate->numOfTags == 0) {
+    mTrace("meter:%s, send msg to dnode, vgId:%d, sid:%d, vnode:%d, dbname:%s",
+           pMeter->meterId, pMeter->gid.vgId, pMeter->gid.sid, pVgroup->vnodeGid[0].vnode, pDb->name);
     mgmtSendCreateMsgToVnode(pMeter, pVgroup->vnodeGid[0].vnode);
   }
 
@@ -781,8 +786,8 @@ static void addMeterIntoMetricIndex(STabObj *pMetric, STabObj *pMeter) {
   SSchema *     pTagSchema = (SSchema *)(pMetric->schema + pMetric->numOfColumns * sizeof(SSchema));
 
   if (pMetric->pSkipList == NULL) {
-    tSkipListCreate(&pMetric->pSkipList, MAX_SKIP_LIST_LEVEL, pTagSchema[KEY_COLUMN_OF_TAGS].type,
-                    pTagSchema[KEY_COLUMN_OF_TAGS].bytes, tSkipListDefaultCompare);
+    pMetric->pSkipList = tSkipListCreate(MAX_SKIP_LIST_LEVEL, pTagSchema[KEY_COLUMN_OF_TAGS].type,
+                    pTagSchema[KEY_COLUMN_OF_TAGS].bytes);
   }
 
   if (pMetric->pSkipList) {
@@ -1052,7 +1057,8 @@ static void mgmtRetrieveMetersFromIDs(tQueryResultset *pRes, char *queryStr, cha
       }
 
       /* queried meter not belongs to this metric, ignore */
-      if (mgmtGetMeter(pMeterObj->pTagData)->uid != pMetric->uid) {
+      if (mgmtGetMeter(pMeterObj->pTagData)->uid != pMetric->uid ||
+          strncmp(pMetric->meterId, pMeterObj->pTagData, TSDB_METER_ID_LEN) != 0) {
         continue;
       }
 

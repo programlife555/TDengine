@@ -39,7 +39,6 @@ void *       mgmtStatisticTimer = NULL;
 void *       mgmtStatusTimer = NULL;
 int          mgmtShellConns = 0;
 extern void *pShellConn;
-extern void *rpcQhandle;
 
 void mgmtCleanUpSystem() {
   mTrace("mgmt is running, clean it up");
@@ -64,10 +63,7 @@ void mgmtProcessDnodeStatus(void *handle, void *tmrId) {
   float memoryUsedMB = 0;
   taosGetSysMemory(&memoryUsedMB);
   pObj->memoryAvailable = tsTotalMemoryMB - memoryUsedMB;
-
-  float diskUsedGB = 0;
-  taosGetDisk(&diskUsedGB);
-  pObj->diskAvailable = tsTotalDiskGB - diskUsedGB;
+  pObj->diskAvailable = tsAvailDataDirGB;
 
   for (int vnode = 0; vnode < pObj->numOfVnodes; ++vnode) {
     SVnodeLoad *pVload = &(pObj->vload[vnode]);
@@ -140,6 +136,7 @@ int mgmtInitSystem() {
 
   dnodeObj.lastReboot = tsRebootTime;
   dnodeObj.numOfCores = (uint16_t)tsNumOfCores;
+  dnodeObj.status = TSDB_STATUS_READY;
   if (dnodeObj.numOfVnodes == TSDB_INVALID_VNODE_NUM) {
     mgmtSetDnodeMaxVnodes(&dnodeObj);
     mPrint("first access, set total vnodes:%d", dnodeObj.numOfVnodes);

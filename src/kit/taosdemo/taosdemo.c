@@ -52,11 +52,11 @@ static struct argp_option options[] = {
   {0, 'q', "query_mode",               0, "Query mode--0: SYNC, 1: ASYNC. Default is SYNC.",                                                                  6},
   {0, 'b', "type_of_cols",             0, "The data_type of columns: 'INT', 'TINYINT', 'SMALLINT', 'BIGINT', 'FLOAT', 'DOUBLE', 'BINARY'. Default is 'INT'.", 7},
   {0, 'w', "length_of_binary",         0, "The length of data_type 'BINARY'. Only applicable when type of cols is 'BINARY'. Default is 8",                    8},
-  {0, 'l', "num_of_cols_per_record",   0, "The number of columns per record. Default is 1.",                                                                  8},
-  {0, 'c', "num_of_conns",             0, "The number of connections. Default is 1.",                                                                         9},
-  {0, 'r', "num_of_records_per_req",   0, "The number of records per request. Default is 1.",                                                                 10},
-  {0, 't', "num_of_tables",            0, "The number of tables. Default is 1.",                                                                              11},
-  {0, 'n', "num_of_records_per_table", 0, "The number of records per table. Default is 50000.",                                                               12},
+  {0, 'l', "num_of_cols_per_record",   0, "The number of columns per record. Default is 3.",                                                                  8},
+  {0, 'c', "num_of_conns",             0, "The number of connections. Default is 10.",                                                                         9},
+  {0, 'r', "num_of_records_per_req",   0, "The number of records per request. Default is 1000.",                                                                 10},
+  {0, 't', "num_of_tables",            0, "The number of tables. Default is 10000.",                                                                              11},
+  {0, 'n', "num_of_records_per_table", 0, "The number of records per table. Default is 100000.",                                                               12},
   {0, 'f', "config_directory",         0, "Configuration directory. Default is '/etc/taos/'.",                                                                14},
   {0, 'x', 0,                          0, "Insert only flag.",                                                                                                13},
   {0}};
@@ -291,10 +291,20 @@ int main(int argc, char *argv[]) {
 
   /* Parse our arguments; every option seen by parse_opt will be
      reflected in arguments. */
+  // For demo use, change default values for some parameters;
+  arguments.num_of_tables = 10000;
+  arguments.num_of_CPR = 3; 
+  arguments.num_of_connections = 10;
+  arguments.num_of_DPT = 100000;
+  arguments.num_of_RPR = 1000;
+  arguments.use_metric = true;
+  arguments.insert_only = true;
+  // end change
+
   argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
   if (arguments.abort) error(10, 0, "ABORTED");
-
+  
   enum MODE query_mode = arguments.mode;
   char *ip_addr = arguments.host;
   int port = arguments.port;
@@ -399,10 +409,10 @@ int main(int argc, char *argv[]) {
 
   } else {
     /* Create metric table */
-    printf("Creating metric table...\n");
-    sprintf(command, "create table %s.m1 (ts timestamp%s tags (index int)", db_name, cols);
+    printf("Creating meters super table...\n");
+    sprintf(command, "create table %s.meters (ts timestamp%s tags (areaid int, loc binary(10))", db_name, cols);
     queryDB(taos, command);
-    printf("Metric created!\n");
+    printf("meters created!\n");
 
     /* Create all the tables; */
     printf("Creating %d table(s)......\n", ntables);
@@ -413,7 +423,11 @@ int main(int argc, char *argv[]) {
       } else {
         j = i % 10;
       }
-      sprintf(command, "create table %s.%s%d using %s.m1 tags(%d);", db_name, tb_prefix, i, db_name, j);
+    if (j % 2 == 0) {
+       sprintf(command, "create table %s.%s%d using %s.meters tags (%d,\"%s\");", db_name, tb_prefix, i, db_name, j,"shanghai");
+      } else {
+       sprintf(command, "create table %s.%s%d using %s.meters tags (%d,\"%s\");", db_name, tb_prefix, i, db_name, j,"beijing");
+      }
       queryDB(taos, command);
     }
 
@@ -646,7 +660,12 @@ void *readMetric(void *sarg) {
 }
 
 void queryDB(TAOS *taos, char *command) {
-  if (taos_query(taos, command) != 0) {
+  int i = 5;
+  while (i > 0) {
+    if (taos_query(taos, command) == 0) break;
+    i--; 
+  }
+  if (i == 0) {
     fprintf(stderr, "Failed to run %s, reason: %s\n", command, taos_errstr(taos));
     taos_close(taos);
     exit(EXIT_FAILURE);
@@ -794,7 +813,7 @@ void generateData(char *res, char **data_type, int num_of_cols, long timestamp, 
     } else if (strcasecmp(data_type[i % c], "smallint") == 0) {
       pstr += sprintf(pstr, ", %d", (int)(rand() % 32767));
     } else if (strcasecmp(data_type[i % c], "int") == 0) {
-      pstr += sprintf(pstr, ", %d", (int)(rand() % 2147483648));
+      pstr += sprintf(pstr, ", %d", (int)(rand() % 10)); 
     } else if (strcasecmp(data_type[i % c], "bigint") == 0) {
       pstr += sprintf(pstr, ", %ld", rand() % 2147483648);
     } else if (strcasecmp(data_type[i % c], "float") == 0) {

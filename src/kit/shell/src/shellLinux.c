@@ -44,6 +44,7 @@
 int indicator = 1;
 struct termios oldtio;
 
+void insertChar(Command *cmd, char *c, int size);
 const char *argp_program_version = version;
 const char *argp_program_bug_address = "<support@taosdata.com>";
 static char doc[] = "";
@@ -305,14 +306,19 @@ void *shellLoopQuery(void *arg) {
   return NULL;
 }
 
-void shellPrintNChar(char *str, int width) {
+void shellPrintNChar(char *str, int width, bool printMode) {
   int col_left = width;
   wchar_t wc;
   while (col_left > 0) {
     if (*str == '\0') break;
     char *tstr = str;
     int byte_width = mbtowc(&wc, tstr, MB_CUR_MAX);
+    if (byte_width <= 0 ) break;
     int col_width = wcwidth(wc);
+    if (col_width <= 0) {
+      str += byte_width;
+      continue;
+    }
     if (col_left < col_width) break;
     printf("%lc", wc);
     str += byte_width;
@@ -323,7 +329,12 @@ void shellPrintNChar(char *str, int width) {
     printf(" ");
     col_left--;
   }
-  printf("|");
+
+  if (!printMode) {
+    printf("|");
+  } else {
+    printf("\n");
+  }
 }
 
 int get_old_terminal_mode(struct termios *tio) {

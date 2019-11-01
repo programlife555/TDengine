@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <errno.h>
 
 #include "os.h"
 
@@ -119,8 +120,18 @@ char **strsplit(char *z, const char *delim, int32_t *num) {
   return split;
 }
 
-char *strnchr(char *haystack, char needle, int32_t len) {
+char *strnchr(char *haystack, char needle, int32_t len, bool skipquote) {
   for (int32_t i = 0; i < len; ++i) {
+
+    // skip the needle in quote, jump to the end of quoted string
+    if (skipquote && (haystack[i] == '\'' || haystack[i] == '"')) {
+      char quote = haystack[i++];
+      while(i < len && haystack[i++] != quote);
+      if (i >= len) {
+        return NULL;
+      }
+    }
+
     if (haystack[i] == needle) {
       return &haystack[i];
     }
@@ -129,46 +140,31 @@ char *strnchr(char *haystack, char needle, int32_t len) {
   return NULL;
 }
 
-char *strnchrNoquote(char *haystack, char needle, int32_t len) {  
-  for (int32_t i = 0; i < len; ++i) {
-  	if (haystack[i] == '\'' || haystack[i] == '"') {
-	  char quote = haystack[i++];
-	  while(i < len && haystack[i] != quote){++i;}
+char* strtolower(char *dst, const char *src) {
+  int esc = 0;
+  char quote = 0, *p = dst, c;
 
-	  if (++i >= len) {
-	  	return NULL;
-	  }
-  	}
-	
-    if (haystack[i] == needle) {
-      return &haystack[i];
+  assert(dst != NULL);
+
+  for (c = *src++; c; c = *src++) {
+    if (esc) {
+      esc = 0;
+    } else if (quote) {
+      if (c == '\\') {
+        esc = 1;
+      } else if (c == quote) {
+        quote = 0;
+      }
+    } else if (c >= 'A' && c <= 'Z') {
+      c -= 'A' - 'a';
+    } else if (c == '\'' || c == '"') {
+      quote = c;
     }
+    *p++ = c;
   }
 
-  return NULL;
-}
-
-
-void strtolower(char *z, char *dst) {
-  int   quote = 0;
-  char *str = z;
-  if (dst == NULL) {
-    return;
-  }
-
-  while (*str) {
-    if (*str == '\'' || *str == '"') {
-      quote = quote ^ 1;
-    }
-
-    if ((!quote) && (*str >= 'A' && *str <= 'Z')) {
-      *dst++ = *str | 0x20;
-    } else {
-      *dst++ = *str;
-    }
-
-    str++;
-  }
+  *p = 0;
+  return dst;
 }
 
 char *paGetToken(char *string, char **token, int32_t *tokenLen) {
@@ -234,7 +230,7 @@ int64_t strnatoi(char *num, int32_t len) {
       } else {
         return 0;
       }
-      ret = dig * base;
+      ret += dig * base;
     }
   } else {
     for (i = len - 1; i >= 0; --i, base *= 10) {
@@ -473,4 +469,42 @@ bool taosValidateEncodec(char *encodec) {
 #else
   return true;
 #endif
+}
+
+bool taosGetVersionNumber(char *versionStr, int *versionNubmer) {
+  if (versionStr == NULL || versionNubmer == NULL) {
+    return false;
+  }
+
+  int versionNumberPos[4] = {0};
+  int len = strlen(versionStr);
+  int dot = 0;
+  for (int pos = 0; pos < len && dot < 4; ++pos) {
+    if (versionStr[pos] == '.') {
+      versionStr[pos] = 0;
+      versionNumberPos[++dot] = pos + 1;
+    }
+  }
+
+  if (dot != 3) {
+    return false;
+  }
+
+  for (int pos = 0; pos < 4; ++pos) {
+    versionNubmer[pos] = atoi(versionStr + versionNumberPos[pos]);
+  }
+  versionStr[versionNumberPos[1] - 1] = '.';
+  versionStr[versionNumberPos[2] - 1] = '.';
+  versionStr[versionNumberPos[3] - 1] = '.';
+
+  return true;
+}
+
+char *taosIpStr(int ipInt) {
+  static char ipStrArray[3][30];
+  static int ipStrIndex = 0;
+
+  char *ipStr = ipStrArray[(ipStrIndex++) % 3];
+  sprintf(ipStr, "0x%x:%d.%d.%d.%d", ipInt, ipInt & 0xFF, (ipInt >> 8) & 0xFF, (ipInt >> 16) & 0xFF, ipInt >> 24);
+  return ipStr;
 }

@@ -1,4 +1,4 @@
-# STable: Super Table
+# STable: Super Table 
 
 "One Table for One Device" design can improve the insert/query performance significantly for a single device. But it has a side effect, the aggregation of multiple tables becomes hard. To reduce the complexity and improve the efficiency, TDengine introduced a new concept: STable (Super Table).  
 
@@ -48,11 +48,11 @@ CREATE TABLE <tb_name> USING <stb_name> TAGS (tag_value1,...)
 You can create any number of tables via a STable, and each table may have different tag values. For example, you create five tables via STable thermometer below:
 
 ```mysql
- create table t1 using thermometer tags (‘beijing’, 10);
- create table t2 using thermometer tags (‘beijing’, 20);
- create table t3 using thermometer tags (‘shanghai’, 10);
- create table t4 using thermometer tags (‘shanghai’, 20);
- create table t5 using thermometer tags (‘new york’, 10);
+ create table t1 using thermometer tags ('beijing', 10);
+ create table t2 using thermometer tags ('beijing', 20);
+ create table t3 using thermometer tags ('shanghai', 10);
+ create table t4 using thermometer tags ('shanghai', 20);
+ create table t5 using thermometer tags ('new york', 10);
 ```
 
 ## Aggregate Tables via STable
@@ -91,7 +91,7 @@ Check the average, maximum, and minimum temperatures of Beijing and Shanghai, an
 ```mysql
 SELECT COUNT(*), AVG(degree), MAX(degree), MIN(degree)
 FROM thermometer
-WHERE location=’beijing’ or location=’tianjing’
+WHERE location='beijing' or location='tianjin'
 GROUP BY location, type 
 ```
 
@@ -102,7 +102,7 @@ List the number of records, average, maximum, and minimum temperature every 10 m
 ```mysql
 SELECT COUNT(*), AVG(degree), MAX(degree), MIN(degree)
 FROM thermometer
-WHERE name=’beijing’ and type=10 and ts>=now-1d
+WHERE name='beijing' and type=10 and ts>=now-1d
 INTERVAL(10M)
 ```
 
@@ -147,13 +147,13 @@ To delete a STable, all the tables created via this STable shall be deleted firs
 ### List the Associated Tables of a STable
 
 ```mysql
-SELECT TBNAME,[TAG_NAME,…] FROM <stable_name> WHERE <tag_name> <[=|=<|>=|<>] values..> ([AND|OR] …)
+SELECT TBNAME,[TAG_NAME,…] FROM <stable_name> WHERE <tag_name> <[=|<=|>=|<>] values..> ([AND|OR] …)
 ```
 
 It will list all the tables which satisfy the tag filter conditions. The tables are all created from this specific STable. TBNAME is a new keyword introduced, it is the table name associated with the STable. 
 
 ```mysql
-SELECT COUNT(TBNAME) FROM <stable_name> WHERE <tag_name> <[=|=<|>=|<>] values..> ([AND|OR] …)
+SELECT COUNT(TBNAME) FROM <stable_name> WHERE <tag_name> <[=|<=|>=|<>] values..> ([AND|OR] …)
 ```
 
 The above SQL statement will list the number of tables in a STable, which satisfy the filter condition.

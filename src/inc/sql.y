@@ -236,6 +236,7 @@ create_table_args(A) ::= AS select(S). {
 
 %type column{TAOS_FIELD}
 %type columnlist{tFieldList*}
+%destructor columnlist {tFieldListDestroy($$);}
 columnlist(A) ::= columnlist(X) COMMA column(Y).  {A = tFieldListAppend(X, &Y);   }
 columnlist(A) ::= column(X).                      {A = tFieldListAppend(NULL, &X);}
 
@@ -408,7 +409,7 @@ limit_opt(A) ::= LIMIT signed(X).      {A.limit = X;  A.offset = 0;}
 limit_opt(A) ::= LIMIT signed(X) OFFSET signed(Y).
                                        {A.limit = X;  A.offset = Y;}
 limit_opt(A) ::= LIMIT signed(X) COMMA signed(Y).
-                                       {A.limit = X;  A.offset = Y;}
+                                       {A.limit = Y;  A.offset = X;}
 
 %type slimit_opt {SLimitVal}
 slimit_opt(A) ::= .                    {A.limit = -1; A.offset = 0;}
@@ -416,7 +417,7 @@ slimit_opt(A) ::= SLIMIT signed(X).    {A.limit = X;  A.offset = 0;}
 slimit_opt(A) ::= SLIMIT signed(X) SOFFSET signed(Y).
                                        {A.limit = X;  A.offset = Y;}
 slimit_opt(A) ::= SLIMIT signed(X) COMMA  signed(Y).
-                                       {A.limit = X;  A.offset = Y;}
+                                       {A.limit = Y;  A.offset = X;}
 
 %type where_opt {tSQLExpr*}
 %destructor where_opt {tSQLExprDestroy($$);}

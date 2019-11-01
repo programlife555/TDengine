@@ -186,12 +186,22 @@ bool httpParseHead(HttpContext* pContext) {
     pParser->data.len = (int32_t)atoi(pParser->pLast + 16);
     httpTrace("context:%p, fd:%d, ip:%s, Content-Length:%d", pContext, pContext->fd, pContext->ipstr,
               pParser->data.len);
-  } else if (tsHttpEnableCompress && strncasecmp(pParser->pLast, "Accept-Encoding: ", 17) == 0) {
-    if (strstr(pParser->pLast + 17, "deflate") != NULL) {
-      pContext->compress = JsonCompress;
+  } else if (strncasecmp(pParser->pLast, "Accept-Encoding: ", 17) == 0) {
+    if (tsHttpEnableCompress && strstr(pParser->pLast + 17, "gzip") != NULL) {
+      pContext->acceptEncoding = HTTP_COMPRESS_GZIP;
+      httpTrace("context:%p, fd:%d, ip:%s, Accept-Encoding:gzip", pContext, pContext->fd, pContext->ipstr);
+    } else {
+      pContext->acceptEncoding = HTTP_COMPRESS_IDENTITY;
+      httpTrace("context:%p, fd:%d, ip:%s, Accept-Encoding:identity", pContext, pContext->fd, pContext->ipstr);
     }
-    httpTrace("context:%p, fd:%d, ip:%s, Accept-Encoding:%s", pContext, pContext->fd, pContext->ipstr,
-              pContext->compress == JsonCompress ? "deflate" : "identity");
+  } else if (strncasecmp(pParser->pLast, "Content-Encoding: ", 18) == 0) {
+    if (strstr(pParser->pLast + 18, "gzip") != NULL) {
+      pContext->contentEncoding = HTTP_COMPRESS_GZIP;
+      httpTrace("context:%p, fd:%d, ip:%s, Content-Encoding:gzip", pContext, pContext->fd, pContext->ipstr);
+    } else {
+      pContext->contentEncoding = HTTP_COMPRESS_IDENTITY;
+      httpTrace("context:%p, fd:%d, ip:%s, Content-Encoding:identity", pContext, pContext->fd, pContext->ipstr);
+    }
   } else if (strncasecmp(pParser->pLast, "Connection: ", 12) == 0) {
     if (strncasecmp(pParser->pLast + 12, "Keep-Alive", 10) == 0) {
       pContext->httpKeepAlive = HTTP_KEEPALIVE_ENABLE;
@@ -214,8 +224,13 @@ bool httpParseHead(HttpContext* pContext) {
         return false;
       }
     } else if (strncasecmp(pParser->pLast + 15, "Taosd ", 6) == 0) {
-      httpSendErrorResp(pContext, HTTP_INVALID_TAOSD_AUTH_TOKEN);
-      return false;
+      pParser->token.pos = pParser->pLast + 21;
+      pParser->token.len = (int16_t)(pParser->pCur - pParser->token.pos - 1);
+      bool parsed = httpParseTaosdAuthToken(pContext, pParser->token.pos, pParser->token.len);
+      if (!parsed) {
+        httpSendErrorResp(pContext, HTTP_INVALID_TAOSD_AUTH_TOKEN);
+        return false;
+      }
     } else {
       httpSendErrorResp(pContext, HTTP_INVALID_AUTH_TOKEN);
       return false;
@@ -259,51 +274,41 @@ bool httpParseChunkedBody(HttpContext* pContext, HttpParser* pParser, bool test)
 }
 
 bool httpReadChunkedBody(HttpContext* pContext, HttpParser* pParser) {
-  for (int tryTimes = 0; tryTimes < HTTP_READ_RETRY_TIMES; ++tryTimes) {
-    bool parsedOk = httpParseChunkedBody(pContext, pParser, true);
-    if (parsedOk) {
-      httpParseChunkedBody(pContext, pParser, false);
-      return HTTP_CHECK_BODY_SUCCESS;
+  bool parsedOk = httpParseChunkedBody(pContext, pParser, true);
+  if (parsedOk) {
+    httpParseChunkedBody(pContext, pParser, false);
+    return HTTP_CHECK_BODY_SUCCESS;
+  } else {
+    httpTrace("context:%p, fd:%d, ip:%s, chunked body not finished, continue read", pContext, pContext->fd,
+              pContext->ipstr);
+    if (!httpReadDataImp(pContext)) {
+      httpError("context:%p, fd:%d, ip:%s, read chunked request error", pContext, pContext->fd, pContext->ipstr);
+      return HTTP_CHECK_BODY_ERROR;
     } else {
-      httpTrace("context:%p, fd:%d, ip:%s, chunked body not finished, continue read", pContext, pContext->fd,
-                pContext->ipstr);
-      if (!httpReadDataImp(pContext)) {
-        httpError("context:%p, fd:%d, ip:%s, read chunked request error", pContext, pContext->fd, pContext->ipstr);
-        return HTTP_CHECK_BODY_ERROR;
-      } else {
-        taosMsleep(HTTP_READ_WAIT_TIME_MS);
-      }
+      return HTTP_CHECK_BODY_CONTINUE;
     }
   }
-
-  httpTrace("context:%p, fd:%d, ip:%s, chunked body not finished, wait epoll", pContext, pContext->fd, pContext->ipstr);
-  return HTTP_CHECK_BODY_CONTINUE;
 }
 
 int httpReadUnChunkedBody(HttpContext* pContext, HttpParser* pParser) {
-  for (int tryTimes = 0; tryTimes < HTTP_READ_RETRY_TIMES; ++tryTimes) {
-    int dataReadLen = pParser->bufsize - (int)(pParser->data.pos - pParser->buffer);
-    if (dataReadLen > pParser->data.len) {
-      httpError("context:%p, fd:%d, ip:%s, un-chunked body length invalid, dataReadLen:%d > pContext->data.len:%d",
-                pContext, pContext->fd, pContext->ipstr, dataReadLen, pParser->data.len);
-      httpSendErrorResp(pContext, HTTP_PARSE_BODY_ERROR);
+  int dataReadLen = pParser->bufsize - (int)(pParser->data.pos - pParser->buffer);
+  if (dataReadLen > pParser->data.len) {
+    httpError("context:%p, fd:%d, ip:%s, un-chunked body length invalid, dataReadLen:%d > pContext->data.len:%d",
+              pContext, pContext->fd, pContext->ipstr, dataReadLen, pParser->data.len);
+    httpSendErrorResp(pContext, HTTP_PARSE_BODY_ERROR);
+    return HTTP_CHECK_BODY_ERROR;
+  } else if (dataReadLen < pParser->data.len) {
+    httpTrace("context:%p, fd:%d, ip:%s, un-chunked body not finished, dataReadLen:%d < pContext->data.len:%d, continue read",
+              pContext, pContext->fd, pContext->ipstr, dataReadLen, pParser->data.len);
+    if (!httpReadDataImp(pContext)) {
+      httpError("context:%p, fd:%d, ip:%s, read chunked request error", pContext, pContext->fd, pContext->ipstr);
       return HTTP_CHECK_BODY_ERROR;
-    } else if (dataReadLen < pParser->data.len) {
-      httpTrace("context:%p, fd:%d, ip:%s, un-chunked body not finished, dataReadLen:%d < pContext->data.len:%d, continue read",
-                pContext, pContext->fd, pContext->ipstr, dataReadLen, pParser->data.len);
-      if (!httpReadDataImp(pContext)) {
-        httpError("context:%p, fd:%d, ip:%s, read chunked request error", pContext, pContext->fd, pContext->ipstr);
-        return HTTP_CHECK_BODY_ERROR;
-      } else {
-        taosMsleep(HTTP_READ_WAIT_TIME_MS);
-      }
     } else {
-      return HTTP_CHECK_BODY_SUCCESS;
+      return HTTP_CHECK_BODY_CONTINUE;
     }
+  } else {
+    return HTTP_CHECK_BODY_SUCCESS;
   }
-
-  httpTrace("context:%p, fd:%d, ip:%s, un-chunked body not finished, wait epoll", pContext, pContext->fd, pContext->ipstr);
-  return HTTP_CHECK_BODY_CONTINUE;
 }
 
 bool httpParseRequest(HttpContext* pContext) {
@@ -312,7 +317,7 @@ bool httpParseRequest(HttpContext* pContext) {
     return true;
   }
 
-  httpDump("context:%p, fd:%d, ip:%s, thread:%s, numOfFds:%d, read size:%d, raw data:\n%s",
+  httpTrace("context:%p, fd:%d, ip:%s, thread:%s, numOfFds:%d, read size:%d, raw data:\n%s",
            pContext, pContext->fd, pContext->ipstr, pContext->pThread->label, pContext->pThread->numOfFds,
            pContext->parser.bufsize, pContext->parser.buffer);
 

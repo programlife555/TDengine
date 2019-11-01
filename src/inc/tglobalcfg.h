@@ -29,7 +29,15 @@ extern int64_t tsPageSize;
 extern int64_t tsOpenMax;
 extern int64_t tsStreamMax;
 extern int32_t tsNumOfCores;
-extern int32_t tsTotalDiskGB;
+extern float   tsTotalLogDirGB;
+extern float   tsTotalTmpDirGB;
+extern float   tsTotalDataDirGB;
+extern float   tsAvailLogDirGB;
+extern float   tsAvailTmpDirGB;
+extern float   tsAvailDataDirGB;
+extern float   tsMinimalLogDirGB;
+extern float   tsMinimalTmpDirGB;
+extern float   tsMinimalDataDirGB;
 extern int32_t tsTotalMemoryMB;
 extern int32_t tsVersion;
 
@@ -64,9 +72,10 @@ extern float tsNumOfThreadsPerCore;
 extern float tsRatioOfQueryThreads;
 extern char  tsInternalIp[];
 extern char  tsServerIpStr[];
-extern int   tsNumOfVnodesPerCore;
-extern int   tsNumOfTotalVnodes;
+extern short tsNumOfVnodesPerCore;
+extern short tsNumOfTotalVnodes;
 extern int   tsShellsPerVnode;
+extern short tsCheckHeaderFile;
 
 extern int tsSessionsPerVnode;
 extern int tsAverageCacheBlocks;
@@ -76,11 +85,11 @@ extern int   tsRowsInFileBlock;
 extern float tsFileBlockMinPercent;
 
 extern short tsNumOfBlocksPerMeter;
-extern int   tsCommitTime;  // seconds
-extern int   tsCommitLog;
-extern int   tsAsyncLog;
-extern int   tsCompression;
-extern int   tsDaysPerFile;
+extern short tsCommitTime;  // seconds
+extern short tsCommitLog;
+extern short tsAsyncLog;
+extern short tsCompression;
+extern short tsDaysPerFile;
 extern int   tsDaysToKeep;
 extern int   tsReplications;
 
@@ -129,6 +138,7 @@ extern int   tsHttpCacheSessions;
 extern int   tsHttpSessionExpire;
 extern int   tsHttpMaxThreads;
 extern int   tsHttpEnableCompress;
+extern int   tsTelegrafUseFieldNum;
 extern int   tsAdminRowLimit;
 
 extern char tsMonitorDbName[];
@@ -136,19 +146,19 @@ extern char tsInternalPass[];
 extern int  tsMonitorInterval;
 
 extern int tsNumOfLogLines;
-extern int ddebugFlag;
-extern int mdebugFlag;
-extern int cdebugFlag;
-extern int jnidebugFlag;
-extern int tmrDebugFlag;
-extern int sdbDebugFlag;
-extern int httpDebugFlag;
-extern int monitorDebugFlag;
-extern int uDebugFlag;
-extern int taosDebugFlag;
-extern int debugFlag;
-extern int odbcdebugFlag;
-extern int qdebugFlag;
+extern uint32_t ddebugFlag;
+extern uint32_t mdebugFlag;
+extern uint32_t cdebugFlag;
+extern uint32_t jnidebugFlag;
+extern uint32_t tmrDebugFlag;
+extern uint32_t sdbDebugFlag;
+extern uint32_t httpDebugFlag;
+extern uint32_t monitorDebugFlag;
+extern uint32_t uDebugFlag;
+extern uint32_t rpcDebugFlag;
+extern uint32_t debugFlag;
+extern uint32_t odbcdebugFlag;
+extern uint32_t qdebugFlag;
 
 extern int  tsRpcTimer;
 extern int  tsRpcMaxTime;
@@ -177,6 +187,7 @@ void tsInitGlobalConfig();
 #define TSDB_CFG_CTYPE_B_LOG 4      // is a log type configuration
 #define TSDB_CFG_CTYPE_B_CLIENT 8   // can be displayed in the client log
 #define TSDB_CFG_CTYPE_B_OPTION 16  // can be configured by taos_options function
+#define TSDB_CFG_CTYPE_B_NOT_PRINT 32
 
 #define TSDB_CFG_CSTATUS_NONE 0     // not configured
 #define TSDB_CFG_CSTATUS_DEFAULT 1  // use system default value

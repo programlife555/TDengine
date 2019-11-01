@@ -327,8 +327,8 @@ void tscFreeSqlObj(SSqlObj* pSql) {
   }
 
   if (pSql->fp == NULL) {
-    sem_destroy(&pSql->rspSem);
-    sem_destroy(&pSql->emptyRspSem);
+    tsem_destroy(&pSql->rspSem);
+    tsem_destroy(&pSql->emptyRspSem);
   }
 
   free(pSql);
@@ -338,7 +338,8 @@ STableDataBlocks* tscCreateDataBlock(int32_t size) {
   STableDataBlocks* dataBuf = (STableDataBlocks*)calloc(1, sizeof(STableDataBlocks));
   dataBuf->nAllocSize = (uint32_t)size;
   dataBuf->pData = calloc(1, dataBuf->nAllocSize);
-  dataBuf->ordered = true;
+
+  dataBuf->tsSource = -1;
   dataBuf->prevTS = INT64_MIN;
   return dataBuf;
 }
@@ -898,7 +899,7 @@ int32_t tscValidateName(SSQLToken* pToken) {
     return TSDB_CODE_INVALID_SQL;
   }
 
-  char* sep = strnchrNoquote(pToken->z, TS_PATH_DELIMITER[0], pToken->n);
+  char* sep = strnchr(pToken->z, TS_PATH_DELIMITER[0], pToken->n, true);
   if (sep == NULL) {  // single part
     if (pToken->type == TK_STRING) {
       pToken->n = strdequote(pToken->z);
@@ -911,7 +912,7 @@ int32_t tscValidateName(SSQLToken* pToken) {
       if (len == pToken->n) {
         return validateQuoteToken(pToken);
       } else {
-        sep = strnchrNoquote(pToken->z, TS_PATH_DELIMITER[0], pToken->n);
+        sep = strnchr(pToken->z, TS_PATH_DELIMITER[0], pToken->n, true);
         if (sep == NULL) {
           return TSDB_CODE_INVALID_SQL;
         }

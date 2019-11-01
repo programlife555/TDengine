@@ -171,6 +171,8 @@ typedef struct STagCond {
 
 typedef struct STableDataBlocks {
   char        meterId[TSDB_METER_ID_LEN];
+  int8_t      tsSource;
+
   int64_t     vgid;
   int64_t     size;
 
@@ -308,8 +310,8 @@ typedef struct _sql_obj {
   char     index;
   char     freed : 4;
   char     listed : 4;
-  sem_t    rspSem;
-  sem_t    emptyRspSem;
+  tsem_t   rspSem;
+  tsem_t   emptyRspSem;
 
   SSqlCmd cmd;
   SSqlRes res;

@@ -25,18 +25,22 @@ SET(TD_ROOT_DIR ${PROJECT_SOURCE_DIR})
 #
 
 # Set macro definitions according to os platform
-SET(TD_OS_WINDOWS FALSE)
-SET(TD_OS_LINUX FALSE)
-SET(TD_OS_ARM FALSE)
-SET(TD_OS_MAC FALSE)
+SET(TD_WINDOWS FALSE)
+SET(TD_LINUX FALSE)
+SET(TD_ARM FALSE)
+SET(TD_DARWIN FALSE)
 
 IF (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   
   SET(TD_OS_DIR ${PROJECT_SOURCE_DIR}/src/os/linux)
   SET(TD_LINUX TRUE)
   ADD_DEFINITIONS(-DLINUX)
-  
-  SET(COMMON_FLAGS "-std=gnu99 -Wall -fPIC -malign-double -g -Wno-char-subscripts -malign-stringops -msse4.2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE")
+
+  IF (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")			
+	SET(COMMON_FLAGS "-std=gnu99 -Wall -fPIC -malign-double -g -Wno-char-subscripts -msse4.2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE")
+  ELSE ()
+	SET(COMMON_FLAGS "-std=gnu99 -Wall -fPIC -malign-double -g -Wno-char-subscripts -malign-stringops -msse4.2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE")
+  ENDIF ()
   SET(DEBUG_FLAGS "-O0 -DDEBUG")
   SET(RELEASE_FLAGS "-O0")
   
@@ -55,6 +59,9 @@ ELSEIF (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   SET(TD_OS_DIR ${PROJECT_SOURCE_DIR}/src/os/windows)
   SET(TD_WINDOWS TRUE)
   ADD_DEFINITIONS(-DWINDOWS)
+  ADD_DEFINITIONS(-D__CLEANUP_C)
+  ADD_DEFINITIONS(-DPTW32_STATIC_LIB)
+  ADD_DEFINITIONS(-DPTW32_BUILD)
   
   SET(COMMON_FLAGS "/nologo /WX- /Oi /Oy- /Gm- /EHsc /MT /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Gd /errorReport:prompt /analyze-")
   SET(DEBUG_FLAGS "/Zi /W3 /GL")
@@ -70,9 +77,28 @@ ELSEIF (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     EXIT ()
   ENDIF ()
 
-ELSE ()
+ELSEIF (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
-  MESSAGE(FATAL_ERROR "The current platform is not Linux or Windows, stop compile")
+  SET(TD_OS_DIR ${PROJECT_SOURCE_DIR}/src/os/darwin)
+  SET(TD_DARWIN TRUE)
+  ADD_DEFINITIONS(-DDARWIN)
+
+  SET(COMMON_FLAGS "-std=gnu99 -Wall -fPIC -malign-double -g -Wno-char-subscripts -msse4.2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -Wno-unused-variable -Wno-bitfield-constant-conversion")
+  SET(DEBUG_FLAGS "-O0 -DDEBUG")
+  SET(RELEASE_FLAGS "-O0")
+
+  ADD_DEFINITIONS(-D_REENTRANT -D__USE_POSIX -D_LIBC_REENTRANT)
+
+  IF (${CMAKE_SIZEOF_VOID_P} MATCHES 8)
+    MESSAGE(STATUS "The current platform is Darwin 64-bit")
+    ADD_DEFINITIONS(-D_M_X64)
+  ELSE ()
+    MESSAGE(FATAL_ERROR "The current platform is Darwin 32-bit, not supported yet")
+    EXIT ()
+  ENDIF ()
+
+ELSE ()
+  MESSAGE(FATAL_ERROR "The current platform is not Linux/MAC/Windows, stop compile")
   EXIT ()
   
 ENDIF ()
@@ -120,6 +146,7 @@ MESSAGE(STATUS "Project library files output path: " ${LIBRARY_OUTPUT_PATH})
 
 ADD_SUBDIRECTORY(deps)
 ADD_SUBDIRECTORY(src)
+ADD_SUBDIRECTORY(tests)
 
 IF (TD_LINUX)
   SET(TD_MAKE_INSTALL_SH "${TD_ROOT_DIR}/packaging/tools/make_install.sh")
@@ -134,10 +161,12 @@ ELSEIF (TD_WINDOWS)
   INSTALL(DIRECTORY ${TD_ROOT_DIR}/tests/examples DESTINATION .)
   INSTALL(DIRECTORY ${TD_ROOT_DIR}/packaging/cfg DESTINATION .)
   INSTALL(FILES ${TD_ROOT_DIR}/src/inc/taos.h DESTINATION include)
+  INSTALL(FILES ${LIBRARY_OUTPUT_PATH}/taos.lib DESTINATION driver)
+  INSTALL(FILES ${LIBRARY_OUTPUT_PATH}/taos.exp DESTINATION driver)
   INSTALL(TARGETS taos RUNTIME DESTINATION driver) 
   INSTALL(TARGETS shell RUNTIME DESTINATION .)
   IF (TD_MVN_INSTALLED)
-    INSTALL(FILES ${TD_ROOT_DIR}/src/connector/jdbc/target/taos-jdbcdriver-1.0.0-dist.jar DESTINATION connector/jdbc)
+    INSTALL(FILES ${LIBRARY_OUTPUT_PATH}/taos-jdbcdriver-1.0.1-dist.jar DESTINATION connector/jdbc)
   ENDIF ()
 ENDIF ()  
 

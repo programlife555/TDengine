@@ -313,7 +313,17 @@ void mgmtDropDbFromSdb(SDbObj *pDb) {
 int mgmtDropDb(SDbObj *pDb) {
   if (pDb->dropStatus == TSDB_DB_STATUS_DROPPING) {
     bool finished = mgmtCheckDropDbFinished(pDb);
-    if (!finished) return TSDB_CODE_ACTION_IN_PROGRESS;
+    if (!finished) {
+      SVgObj *pVgroup = pDb->pHead;
+      while (pVgroup != NULL) {
+        SDnodeObj *pDnode = &dnodeObj;
+        if (pDnode == NULL) continue;
+        SVnodeLoad *pVload = &pDnode->vload[pVgroup->vnodeGid[0].vnode];
+        mgmtSendFreeVnodeMsg(pVgroup->vnodeGid[0].vnode);
+        pVgroup = pVgroup->next;
+      }
+      return TSDB_CODE_ACTION_IN_PROGRESS;
+    }
 
     // don't sync this action
     pDb->dropStatus = TSDB_DB_STATUS_DROP_FROM_SDB;
@@ -366,6 +376,8 @@ int mgmtAlterDb(SAcctObj *pAcct, SAlterDbMsg *pAlter) {
   if (pAlter->daysToKeep > 0) {
     mTrace("db:%s daysToKeep:%d change to %d", pDb->name, pDb->cfg.daysToKeep, pAlter->daysToKeep);
     pDb->cfg.daysToKeep = pAlter->daysToKeep;
+  } else {
+    return TSDB_CODE_INVALID_OPTION;
   }
 
   if (sdbUpdateRow(dbSdb, pDb, tsDbUpdateSize, 1) < 0) {
@@ -466,7 +478,7 @@ int mgmtRemoveMetricFromDb(SDbObj *pDb, STabObj *pMetric) {
   pDb->numOfMetrics--;
 
   if (pMetric->pSkipList != NULL) {
-    tSkipListDestroy(&pMetric->pSkipList);
+    pMetric->pSkipList = tSkipListDestroy(pMetric->pSkipList);
   }
   return 0;
 }

@@ -278,14 +278,14 @@ typedef struct {
   TSKEY       ekey;
   int64_t     nAggTimeInterval;
   char        intervalTimeUnit;  // interval data type, used for daytime revise
+  char        precision;
+  int16_t     numOfOutputCols;
+  int16_t     interpoType;
+  int16_t     checkBufferInLoop;  // check if the buffer is full during scan each block
 
-  int16_t numOfOutputCols;
-  int16_t interpoType;
-  int16_t checkBufferInLoop;  // check if the buffer is full during scan each block
-
-  SLimitVal limit;
-  int32_t   rowSize;
-  int32_t   dataRowSize;  // row size of each loaded data from disk, the value is
+  SLimitVal   limit;
+  int32_t     rowSize;
+  int32_t     dataRowSize;  // row size of each loaded data from disk, the value is
   // used for prepare buffer
   SSqlGroupbyExpr * pGroupbyExpr;
   SSqlFunctionExpr *pSelectExpr;
@@ -324,11 +324,12 @@ typedef struct {
 // internal globals
 extern int        tsMeterSizeOnFile;
 extern uint32_t   tsRebootTime;
-extern void *     rpcQhandle;
+extern void **    rpcQhandle;
 extern void *     dmQhandle;
 extern void *     queryQhandle;
 extern int        tsMaxVnode;
 extern int        tsOpenVnodes;
+extern int        tsMaxVnode;
 extern SVnodeObj *vnodeList;
 extern void *     vnodeTmrCtrl;
 
@@ -382,9 +383,9 @@ int vnodeCreateMeterObj(SMeterObj *pNew, SConnSec *pSec);
 
 int vnodeRemoveMeterObj(int vnode, int sid);
 
-int vnodeInsertPoints(SMeterObj *pObj, char *cont, int contLen, char source, void *, int sversion, int *numOfPoints);
+int vnodeInsertPoints(SMeterObj *pObj, char *cont, int contLen, char source, void *, int sversion, int *numOfPoints, TSKEY now);
 
-int vnodeImportPoints(SMeterObj *pObj, char *cont, int contLen, char source, void *, int sversion, int *numOfPoints);
+int vnodeImportPoints(SMeterObj *pObj, char *cont, int contLen, char source, void *, int sversion, int *numOfPoints, TSKEY now);
 
 int vnodeInsertBufferedPoints(int vnode);
 
@@ -537,7 +538,7 @@ void vnodeRemoveCommitLog(int vnode);
 
 int vnodeWriteToCommitLog(SMeterObj *pObj, char action, char *cont, int contLen, int sversion);
 
-extern int (*vnodeProcessAction[])(SMeterObj *, char *, int, char, void *, int, int *);
+extern int (*vnodeProcessAction[])(SMeterObj *, char *, int, char, void *, int, int *, TSKEY);
 
 extern int (*pCompFunc[])(const char *const input, int inputSize, const int elements, char *const output,
                           int outputSize, char algorithm, char *const buffer, int bufferSize);

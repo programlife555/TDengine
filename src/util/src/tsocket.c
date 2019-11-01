@@ -301,9 +301,13 @@ int taosOpenUdpSocket(char *ip, short port) {
 
   nocheck = 1;
   if (taosSetSockOpt(sockFd, SOL_SOCKET, SO_NO_CHECK, (void *)&nocheck, sizeof(nocheck)) < 0) {
-    pError("setsockopt SO_NO_CHECK failed: %d (%s)", errno, strerror(errno));
-    close(sockFd);
-    return -1;
+    if (!taosSkipSocketCheck()) {
+      pError("setsockopt SO_NO_CHECK failed: %d (%s)", errno, strerror(errno));
+      close(sockFd);
+      return -1;
+    } else {
+      pPrint("Skipping setsockopt SO_NO_CHECK error: %d (%s)", errno, strerror(errno));
+    }
   }
 
   ttl = 128;

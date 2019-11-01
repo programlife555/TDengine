@@ -47,11 +47,7 @@ int64_t taosGetPthreadId() {
 }
 
 int taosSetSockOpt(int socketfd, int level, int optname, void *optval, int optlen) {
-  if (level == SOL_SOCKET && optname == SO_NO_CHECK) {
-    return 0;
-  }
-
-  if (level == SOL_TCP && optname == TCP_KEEPCNT) {
+  if (level == SOL_SOCKET && optname == TCP_KEEPCNT) {
     return 0;
   }
 
@@ -80,6 +76,14 @@ int64_t __sync_val_compare_and_swap_64(int64_t *ptr, int64_t oldval, int64_t new
 
 int64_t __sync_add_and_fetch_64(int64_t *ptr, int64_t val) {
   return InterlockedAdd64(ptr, val);
+}
+
+int32_t __sync_val_load_32(int32_t *ptr) {
+  return InterlockedOr(ptr, 0);
+}
+
+void __sync_val_restore_32(int32_t *ptr, int32_t newval) {
+  InterlockedCompareExchange(ptr, *ptr, newval);
 }
 
 void tsPrintOsInfo() {}
@@ -182,6 +186,10 @@ int flock(int fd, int option) {
   return 0;
 }
 
+int fsync(int filedes) {
+  return 0;
+}
+
 int sigaction(int sig, struct sigaction *d, void *p) {
   return 0;
 }
@@ -195,4 +203,71 @@ int wordexp(const char *words, wordexp_t *pwordexp, int flags) {
 }
 
 void wordfree(wordexp_t *pwordexp) {}
+
+void taosGetDisk() {}
+
+bool taosSkipSocketCheck() {
+  return false;
+}
+
+#define _SEND_FILE_STEP_ 1000
+
+int fsendfile(FILE* out_file, FILE* in_file, int64_t* offset, int32_t count) {
+  fseek(in_file, (int32_t)(*offset), 0);
+  int writeLen = 0;
+  uint8_t buffer[_SEND_FILE_STEP_] = { 0 };
+  
+  for (int len = 0; len < (count - _SEND_FILE_STEP_); len += _SEND_FILE_STEP_) {
+    size_t rlen = fread(buffer, 1, _SEND_FILE_STEP_, in_file);
+    if (rlen <= 0) {
+      return writeLen;
+    }
+    else if (rlen < _SEND_FILE_STEP_) {
+      fwrite(buffer, 1, rlen, out_file);
+      return (int)(writeLen + rlen);
+    }
+    else {
+      fwrite(buffer, 1, _SEND_FILE_STEP_, in_file);
+      writeLen += _SEND_FILE_STEP_;
+    }
+  }
+
+  int remain = count - writeLen;
+  if (remain > 0) {
+    size_t rlen = fread(buffer, 1, remain, in_file);
+    if (rlen <= 0) {
+      return writeLen;
+    }
+    else {
+      fwrite(buffer, 1, remain, out_file);
+      writeLen += remain;
+    }
+  }
+
+  return writeLen;
+}
+
+int32_t BUILDIN_CLZL(uint64_t val) {
+  unsigned long r = 0;
+  _BitScanReverse64(&r, val);
+  return (int)(r >> 3);
+}
+
+int32_t BUILDIN_CLZ(uint32_t val) {
+  unsigned long r = 0;
+  _BitScanReverse(&r, val);
+  return (int)(r >> 3);
+}
+
+int32_t BUILDIN_CTZL(uint64_t val) {
+  unsigned long r = 0;
+  _BitScanForward64(&r, val);
+  return (int)(r >> 3);
+}
+
+int32_t BUILDIN_CTZ(uint32_t val) {
+  unsigned long r = 0;
+  _BitScanForward(&r, val);
+  return (int)(r >> 3);
+}
 

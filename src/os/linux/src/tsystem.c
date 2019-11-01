@@ -229,30 +229,24 @@ char *taosCharsetReplace(char *charsetstr) {
   return strdup(charsetstr);
 }
 
+/*
+ * POSIX format locale string:
+ * (Language Strings)_(Country/Region Strings).(code_page)
+ *
+ * example: en_US.UTF-8, zh_CN.GB18030, zh_CN.UTF-8,
+ *
+ * if user does not specify the locale in taos.cfg the program use default LC_CTYPE as system locale.
+ *
+ * In case of some CentOS systems, their default locale is "en_US.utf8", which is not valid code_page
+ * for libiconv that is employed to convert string in this system. This program will automatically use
+ * UTF-8 instead as the charset.
+ *
+ * In case of windows client, the locale string is not valid POSIX format, user needs to set the
+ * correct code_page for libiconv. Usually, the code_page of windows system with simple chinese is
+ * CP936, CP437 for English charset.
+ *
+ */
 void taosGetSystemLocale() {  // get and set default locale
-                              /*
-                               * POSIX format locale string:
-                               * (Language Strings)_(Country/Region Strings).(code_page)
-                               *
-                               * example: en_US.UTF-8, zh_CN.GB18030, zh_CN.UTF-8,
-                               *
-                               * if user does not specify the locale in taos.cfg
-                               * the program use default LC_CTYPE as system locale.
-                               *
-                               * In case of some CentOS systems, their default locale is "en_US.utf8", which
-                               * is not
-                               * valid code_page for libiconv that is employed to convert string in this
-                               * system.
-                               * User needs to specify the locale explicitly
-                               * in config file in the correct format: en_US.UTF-8
-                               *
-                               * In case of windows client, the locale string is not legal POSIX format,
-                               * user needs to
-                               * set the correct code_page for libiconv. Usually, the code_page of windows
-                               * system
-                               * with simple chinese is CP936, CP437 for English locale.
-                               *
-                               */
   char  sep = '.';
   char *locale = NULL;
 
@@ -262,7 +256,7 @@ void taosGetSystemLocale() {  // get and set default locale
     if (locale == NULL) {
       pError("can't get locale from system");
     } else {
-      strncpy(tsLocale, locale, sizeof(tsLocale) / sizeof(tsLocale[0]));
+      strncpy(tsLocale, locale, tListLen(tsLocale));
       pPrint("locale not configured, set to system default:%s", tsLocale);
     }
   }
@@ -275,7 +269,7 @@ void taosGetSystemLocale() {  // get and set default locale
       str++;
 
       char *revisedCharset = taosCharsetReplace(str);
-      strncpy(tsCharset, revisedCharset, sizeof(tsCharset) / sizeof(tsCharset[0]));
+      strncpy(tsCharset, revisedCharset, tListLen(tsCharset));
 
       free(revisedCharset);
       pPrint("charset not configured, set to system default:%s", tsCharset);
@@ -322,19 +316,38 @@ bool taosGetCpuUsage(float *sysCpuUsage, float *procCpuUsage) {
   return true;
 }
 
-bool taosGetDisk(float *diskUsedGB) {
+bool taosGetDisk() {
   struct statvfs info;
   const double   unit = 1024 * 1024 * 1024;
 
-  if (statvfs(tsDirectory, &info)) {
-    *diskUsedGB = 0;
-    tsTotalDiskGB = 0;
-    return false;
+  if (tscEmbedded) {
+    if (statvfs(dataDir, &info)) {
+      tsTotalDataDirGB = 0;
+      tsAvailDataDirGB = 0;
+      return false;
+    } else {
+      tsTotalDataDirGB = (float)((double)info.f_blocks * (double)info.f_frsize / unit);
+      tsAvailDataDirGB = (float)((double)info.f_bavail * (double)info.f_frsize / unit);
+    }
   }
 
-  float diskAvail = (float)((double)info.f_bavail * (double)info.f_frsize / unit);
-  tsTotalDiskGB = (int32_t)((double)info.f_blocks * (double)info.f_frsize / unit);
-  *diskUsedGB = (float)tsTotalDiskGB - diskAvail;
+  if (statvfs(logDir, &info)) {
+    tsTotalLogDirGB = 0;
+    tsAvailLogDirGB = 0;
+    return false;
+  } else {
+    tsTotalLogDirGB = (float)((double)info.f_blocks * (double)info.f_frsize / unit);
+    tsAvailLogDirGB = (float)((double)info.f_bavail * (double)info.f_frsize / unit);
+  }
+
+  if (statvfs("/tmp", &info)) {
+    tsTotalTmpDirGB = 0;
+    tsAvailTmpDirGB = 0;
+    return false;
+  } else {
+    tsTotalTmpDirGB = (float)((double)info.f_blocks * (double)info.f_frsize / unit);
+    tsAvailTmpDirGB = (float)((double)info.f_bavail * (double)info.f_frsize / unit);
+  }
 
   return true;
 }
@@ -549,7 +562,7 @@ void taosGetSystemInfo() {
   float tmp1, tmp2;
   taosGetSysMemory(&tmp1);
   taosGetProcMemory(&tmp2);
-  taosGetDisk(&tmp1);
+  taosGetDisk();
   taosGetBandSpeed(&tmp1);
   taosGetCpuUsage(&tmp1, &tmp2);
   taosGetProcIO(&tmp1, &tmp2);
@@ -563,7 +576,7 @@ void tsPrintOsInfo() {
   pPrint(" os openMax:             %ld", tsOpenMax);
   pPrint(" os streamMax:           %ld", tsStreamMax);
   pPrint(" os numOfCores:          %d", tsNumOfCores);
-  pPrint(" os totalDisk:           %d(GB)", tsTotalDiskGB);
+  pPrint(" os totalDisk:           %f(GB)", tsTotalDataDirGB);
   pPrint(" os totalMemory:         %d(MB)", tsTotalMemoryMB);
 
   struct utsname buf;
