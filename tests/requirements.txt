@@ -1,0 +1,11 @@
+taospy
+numpy
+fabric2
+psutil
+pandas
+toml
+distro
+requests
+pexpect
+faker
+pyopenssl
